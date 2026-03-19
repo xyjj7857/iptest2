@@ -111,14 +111,21 @@ export default function App() {
       settings.binance.secretKey, 
       settings.binance.baseUrl
     );
-    binance.getIp().then(setIp);
     
-    fetch('https://api.ipify.org?format=json')
-      .then(res => res.json())
-      .then(data => setLocalIp(data.ip))
-      .catch(() => setLocalIp('获取失败'));
+    const fetchIps = () => {
+      binance.getIp().then(setIp);
+      
+      fetch('https://api.ipify.org?format=json')
+        .then(res => res.json())
+        .then(data => setLocalIp(data.ip))
+        .catch(() => setLocalIp('获取失败'));
+    };
+
+    fetchIps();
+    const ipInterval = setInterval(fetchIps, 30000);
 
     return () => {
+      clearInterval(ipInterval);
       if (engineRef.current) {
         engineRef.current.stop();
       }

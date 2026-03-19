@@ -125,7 +125,9 @@ export class BinanceService {
           throw new Error(`币安 API 权限/IP 错误: 请确保已在币安 API 设置中勾选 "允许合约" 权限。如果开启了 IP 限制，请将当前请求 IP (${currentIp}) 加入白名单。`);
         }
 
-        throw new Error(data.msg || `Binance API Error (${response.status})`);
+        const errorMsg = data.msg || data.error || `Binance API Error (${response.status})`;
+        const errorDetails = data.details ? ` | 详情: ${data.details}` : '';
+        throw new Error(`${errorMsg}${errorDetails}`);
       }
 
       return data;

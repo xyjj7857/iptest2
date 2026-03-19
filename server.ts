@@ -3,7 +3,7 @@ import { createServer as createViteServer } from "vite";
 
 async function startServer() {
   const app = express();
-  const PORT = 3030;
+  const PORT = 3000;
 
   app.use(express.json());
 
@@ -13,44 +13,79 @@ async function startServer() {
   });
 
   app.get("/api/ip", async (req, res) => {
-    try {
-      const response = await fetch('https://api.ipify.org?format=json');
-      const data = await response.json();
-      res.json(data);
-    } catch (e) {
-      res.status(500).json({ error: 'Failed to fetch IP' });
+    const services = [
+      'https://api.ipify.org?format=json',
+      'https://api64.ipify.org?format=json',
+      'https://ifconfig.me/all.json',
+      'https://ipinfo.io/json'
+    ];
+
+    for (const service of services) {
+      try {
+        const response = await fetch(service, { signal: AbortSignal.timeout(5000) });
+        if (response.ok) {
+          const data = await response.json();
+          const ip = data.ip || data.ip_addr || data.query;
+          if (ip) {
+            return res.json({ ip });
+          }
+        }
+      } catch (e) {
+        console.error(`Failed to fetch IP from ${service}:`, e);
+      }
     }
+    res.status(500).json({ error: 'Failed to fetch IP from all services' });
   });
 
   app.post("/api/proxy", async (req, res) => {
     const { url, method, headers, body } = req.body;
+    const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+    console.log(`[Proxy] ${method} ${url} | Client: ${clientIp}`);
+    
     try {
-      // Clean up headers to avoid issues with host or other restricted headers
-      const cleanHeaders: Record<string, string> = {};
+      const cleanHeaders: Record<string, string> = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      };
+      
       if (headers) {
         Object.entries(headers).forEach(([key, val]) => {
           const lowerKey = key.toLowerCase();
-          if (lowerKey !== 'host' && lowerKey !== 'content-length' && typeof val === 'string') {
-            cleanHeaders[key] = val;
+          if (lowerKey === 'x-mbx-apikey' || lowerKey === 'content-type') {
+            cleanHeaders[key] = val as string;
           }
         });
       }
 
-      const response = await fetch(url, {
+      const fetchOptions: RequestInit = {
         method,
         headers: cleanHeaders,
-        body: method !== 'GET' && body ? JSON.stringify(body) : undefined
-      });
+        // Ensure we don't follow redirects to sensitive internal IPs
+        redirect: 'follow',
+      };
+
+      if (method !== 'GET' && body) {
+        fetchOptions.body = typeof body === 'string' ? body : JSON.stringify(body);
+      }
+
+      const response = await fetch(url, fetchOptions);
       
       const contentType = response.headers.get('content-type');
       if (contentType && contentType.includes('application/json')) {
         const data = await response.json();
+        if (!response.ok) {
+          console.error(`[Proxy] Binance Error (${response.status}):`, JSON.stringify(data));
+        }
         res.status(response.status).json(data);
       } else {
         const text = await response.text();
-        res.status(response.status).json({ error: `Non-JSON response from Binance (${response.status})`, details: text.slice(0, 500) });
+        console.error(`[Proxy] Non-JSON Response (${response.status}):`, text.slice(0, 200));
+        res.status(response.status).json({ 
+          error: `Non-JSON response from Binance (${response.status})`, 
+          details: text.slice(0, 500) 
+        });
       }
     } catch (e: any) {
+      console.error(`[Proxy] Error:`, e.message);
       res.status(500).json({ error: e.message });
     }
   });
