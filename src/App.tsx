@@ -21,7 +21,6 @@ export default function App() {
   const [isLocked, setIsLocked] = useState(true);
   const [logs, setLogs] = useState<LogEntry[]>(StorageService.getLogs());
   const [ip, setIp] = useState('加载中...');
-  const [localIp, setLocalIp] = useState('加载中...');
   const [engineState, setEngineState] = useState<any>({
     stage0Results: [],
     stage0PResults: [],
@@ -117,14 +116,6 @@ export default function App() {
       } catch (e) {
         setIp('获取失败');
       }
-
-      try {
-        const res = await fetch('https://api.ipify.org?format=json');
-        const data = await res.json();
-        setLocalIp(data.ip);
-      } catch (e) {
-        setLocalIp('获取失败');
-      }
     };
 
     fetchIps();
@@ -197,7 +188,7 @@ export default function App() {
       onToggleMaster={handleToggleMaster}
       onLock={() => setIsLocked(true)}
     >
-      {activeTab === 'dashboard' && <Dashboard state={engineState} ip={ip} localIp={localIp} />}
+      {activeTab === 'dashboard' && <Dashboard state={engineState} ip={ip} />}
       {activeTab === 'scanner' && (
         <ScannerView 
           state={engineState} 

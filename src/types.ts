@@ -101,7 +101,6 @@ export interface AppSettings {
   lockPassword: string;
   lockTimeout: number; // minutes
   masterSwitch: boolean;
-  ipSelection: 'local' | 'proxy';
   email: {
     enabled: boolean;
     from: string;

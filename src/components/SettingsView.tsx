@@ -187,7 +187,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSave, ip
                   localSettings.binance.secretKey,
                   localSettings.binance.baseUrl
                 );
-                binance.setIpSelection(localSettings.ipSelection);
                 await binance.getAccountInfo();
                 alert('连接成功！API 密钥及 IP 设置均正常。');
               } catch (e: any) {
@@ -252,23 +251,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSave, ip
               className="w-full p-2 border rounded-lg focus:ring-2 focus:ring-indigo-500 outline-none"
             />
           </div>
-          <div className="space-y-1">
-            <label className="text-sm text-gray-500">命令发起 IP 选择</label>
-            <div className="flex gap-2 bg-gray-100 p-1 rounded-lg">
-              <button 
-                onClick={() => handleChange('ipSelection', '', 'local')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${localSettings.ipSelection === 'local' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                本地 IP (浏览器)
-              </button>
-              <button 
-                onClick={() => handleChange('ipSelection', '', 'proxy')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-md transition-all ${localSettings.ipSelection === 'proxy' ? 'bg-white text-indigo-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-              >
-                代理 IP (服务器)
-              </button>
-            </div>
-          </div>
         </div>
         <div className="mt-4 p-4 bg-amber-50 rounded-xl border border-amber-200">
           <div className="flex justify-between items-start gap-4">
@@ -290,7 +272,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSave, ip
               </div>
               <div className="mt-3 space-y-2">
                 <p className="text-xs text-amber-700 leading-relaxed">
-                  如果您选择了 <span className="font-bold">“代理 IP (服务器)”</span>，您 <span className="font-bold underline">必须</span> 在币安 API 设置中：
+                  核心程序将通过 <span className="font-bold">服务器 IP</span> 执行，您 <span className="font-bold underline">必须</span> 在币安 API 设置中：
                 </p>
                 <ul className="text-[11px] text-amber-600 list-disc list-inside space-y-1">
                   <li>勾选 <span className="font-bold">“启用合约”</span> 权限</li>

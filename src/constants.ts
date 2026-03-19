@@ -89,7 +89,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   lockPassword: "Flzx3qc",
   lockTimeout: 60,
   masterSwitch: true,
-  ipSelection: 'proxy',
   email: {
     enabled: false,
     from: "yyb_cq@hotmail.com",

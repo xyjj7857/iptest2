@@ -89,7 +89,6 @@ export class StrategyEngine {
       settings.binance.secretKey,
       settings.binance.baseUrl
     );
-    this.binance.setIpSelection(settings.ipSelection);
     this.ws = new BinanceWS(settings.binance.wsUrl, this.handleWSMessage.bind(this));
     this.masterSwitch = settings.masterSwitch;
 
@@ -1414,7 +1413,6 @@ export class StrategyEngine {
       settings.binance.secretKey,
       settings.binance.baseUrl
     );
-    this.binance.setIpSelection(settings.ipSelection);
 
     // Update WebSocket URL if changed
     this.ws.setUrl(settings.binance.wsUrl);

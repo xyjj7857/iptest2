@@ -71,7 +71,6 @@ export class SupabaseService {
       binance_secret_key: s.binance.secretKey,
       binance_base_url: s.binance.baseUrl,
       binance_ws_url: s.binance.wsUrl,
-      ip_selection: s.ipSelection,
       
       s0_period: s.scanner.stage0Period,
       s0_start_time: s.scanner.stage0StartTime,
@@ -170,7 +169,6 @@ export class SupabaseService {
     return {
       ...current,
       masterSwitch: row.master_switch ?? current.masterSwitch,
-      ipSelection: (row.ip_selection as any) ?? current.ipSelection,
       lockPassword: row.lock_password ?? current.lockPassword,
       lockTimeout: this.toNum(row.lock_timeout, current.lockTimeout),
       binance: {

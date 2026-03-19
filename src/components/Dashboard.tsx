@@ -6,10 +6,9 @@ import { exportToExcel } from '../utils/exportUtils';
 interface DashboardProps {
   state: any;
   ip: string;
-  localIp: string;
 }
 
-export const Dashboard: React.FC<DashboardProps> = ({ state, ip, localIp }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ state, ip }) => {
   const [copied, setCopied] = useState(false);
 
   const copyToClipboard = (text: string) => {
@@ -156,10 +155,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ state, ip, localIp }) => {
               <span className="text-sm font-mono font-bold text-gray-700">
                 {state.lastWSMessageTime > 0 ? `${((Date.now() - state.lastWSMessageTime) / 1000)?.toFixed(1)}s前` : '等待中...'}
               </span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-400 flex items-center gap-1"><Globe size={12} /> 浏览器 IP (本地)</span>
-              <span className="text-sm font-mono font-bold text-gray-700">{localIp}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xs text-gray-400 flex items-center gap-1"><Globe size={12} /> 服务器 IP (Cloud Run)</span>

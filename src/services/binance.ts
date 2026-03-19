@@ -5,17 +5,12 @@ export class BinanceService {
   private secretKey: string;
   private baseUrl: string;
   private timeOffset: number = 0;
-  private ipSelection: 'local' | 'proxy' = 'local';
 
   constructor(apiKey: string, secretKey: string, baseUrl: string) {
     this.apiKey = apiKey.trim();
     this.secretKey = secretKey.trim();
     this.baseUrl = baseUrl.trim();
     this.syncTime();
-  }
-
-  setIpSelection(selection: 'local' | 'proxy') {
-    this.ipSelection = selection;
   }
 
   async syncTime() {
@@ -25,15 +20,11 @@ export class BinanceService {
       let data;
       let response;
 
-      if (this.ipSelection === 'proxy') {
-        response = await fetch('/api/proxy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, method: 'GET' })
-        });
-      } else {
-        response = await fetch(url);
-      }
+      response = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, method: 'GET' })
+      });
 
       if (!response.ok) {
         throw new Error(`Failed to sync time: ${response.status}`);
@@ -87,23 +78,11 @@ export class BinanceService {
       let response;
       let data;
 
-      const fetchOptions: any = {
-        method,
-        headers,
-      };
-      if (method !== 'GET' && params && Object.keys(params).length > 0 && !signed) {
-        // For non-signed POST/PUT, we might need body, but Binance usually uses query params for FAPI
-      }
-
-      if (this.ipSelection === 'proxy') {
-        response = await fetch('/api/proxy', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, method, headers })
-        });
-      } else {
-        response = await fetch(url, fetchOptions);
-      }
+      response = await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, method, headers })
+      });
 
       const contentType = response.headers.get('content-type');
       if (contentType && contentType.includes('application/json')) {
@@ -112,12 +91,7 @@ export class BinanceService {
         const text = await response.text();
         const isHtml = text.trim().toLowerCase().startsWith('<!doctype html') || text.trim().toLowerCase().startsWith('<html');
         if (isHtml) {
-          if (this.ipSelection === 'local' && !params._isRetry) {
-            console.warn('HTML response received on local, retrying with proxy...');
-            this.ipSelection = 'proxy';
-            return this.request(method, path, { ...params, _isRetry: true }, signed);
-          }
-          throw new Error(`Binance API 返回了 HTML 响应 (${response.status})。这通常是因为请求被拦截或重定向。请在设置中确保 "IP 选择" 已设置为 "服务器代理 (Proxy)"。`);
+          throw new Error(`Binance API 返回了 HTML 响应 (${response.status})。这通常是因为请求被拦截或重定向。`);
         }
         throw new Error(`Binance API returned non-JSON response (${response.status}): ${text.slice(0, 100)}...`);
       }
@@ -131,7 +105,7 @@ export class BinanceService {
         }
 
         if (data && data.code === -2015) {
-          const serverIp = this.ipSelection === 'proxy' ? await this.getIp() : '本地 IP';
+          const serverIp = await this.getIp();
           throw new Error(`币安 API 权限/IP 错误: 请确保已在币安 API 设置中勾选 "允许合约" 权限。如果开启了 IP 限制，请将当前请求 IP (${serverIp}) 加入白名单。`);
         }
 
@@ -142,10 +116,6 @@ export class BinanceService {
     } catch (e: any) {
       if (e.message.includes('Failed to fetch') && !params._isRetry) {
         console.warn('Network error detected, retrying once...');
-        if (this.ipSelection === 'local') {
-          console.warn('Switching to proxy for retry...');
-          this.ipSelection = 'proxy';
-        }
         await new Promise(resolve => setTimeout(resolve, 1000));
         return this.request(method, path, { ...params, _isRetry: true }, signed);
       }
