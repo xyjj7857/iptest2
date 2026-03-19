@@ -53,19 +53,29 @@ export class BinanceService {
 
   private async request(method: string, path: string, params: any = {}, signed: boolean = false) {
     const timestamp = Math.floor(Date.now() + this.timeOffset);
-    const requestParams = { ...params };
+    
+    // Strip internal flags and prepare parameters
+    const { _isRetry, ...apiParams } = params;
+    const requestParams: any = { ...apiParams };
 
     if (signed) {
       requestParams.timestamp = timestamp;
-      requestParams.recvWindow = 60000; // Maximum allowed recvWindow
+      requestParams.recvWindow = 60000;
     }
 
-    let queryString = Object.entries(requestParams)
-      .map(([key, val]) => `${key}=${val}`)
-      .join('&');
+    // Build query string with proper encoding
+    // Note: Binance requires the signature to be calculated on the query string
+    const searchParams = new URLSearchParams();
+    for (const [key, val] of Object.entries(requestParams)) {
+      if (val !== undefined && val !== null) {
+        searchParams.append(key, String(val));
+      }
+    }
+    
+    let queryString = searchParams.toString();
 
     if (signed) {
-      const signature = CryptoJS.HmacSHA256(queryString, this.secretKey).toString();
+      const signature = CryptoJS.HmacSHA256(queryString, this.secretKey).toString(CryptoJS.enc.Hex);
       queryString += `&signature=${signature}`;
     }
 
@@ -78,10 +88,15 @@ export class BinanceService {
       let response;
       let data;
 
+      // For Binance API, we put all parameters in the URL query string.
+      // We do NOT send a JSON body because Binance fapi expects form-urlencoded or empty body for these endpoints.
+      // Sending a JSON body via the proxy was causing signature mismatches.
+      const proxyPayload: any = { url, method, headers };
+
       response = await fetch('/api/proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url, method, headers })
+        body: JSON.stringify(proxyPayload)
       });
 
       const contentType = response.headers.get('content-type');
@@ -97,16 +112,17 @@ export class BinanceService {
       }
 
       if (!response.ok) {
-        // Handle recvWindow error by re-syncing and retrying once
-        if (data && data.code === -1021 && !params._isRetry) {
+        // Handle recvWindow error by re-syncing and retrying
+        const retryCount = params._retryCount || 0;
+        if (data && data.code === -1021 && retryCount < 2) {
           console.warn('Timestamp error detected, re-syncing time and retrying...');
           await this.syncTime();
-          return this.request(method, path, { ...params, _isRetry: true }, signed);
+          return this.request(method, path, { ...params, _retryCount: retryCount + 1 }, signed);
         }
 
         if (data && data.code === -2015) {
-          const serverIp = await this.getIp();
-          throw new Error(`币安 API 权限/IP 错误: 请确保已在币安 API 设置中勾选 "允许合约" 权限。如果开启了 IP 限制，请将当前请求 IP (${serverIp}) 加入白名单。`);
+          const currentIp = await this.getIp();
+          throw new Error(`币安 API 权限/IP 错误: 请确保已在币安 API 设置中勾选 "允许合约" 权限。如果开启了 IP 限制，请将当前请求 IP (${currentIp}) 加入白名单。`);
         }
 
         throw new Error(data.msg || `Binance API Error (${response.status})`);
@@ -114,12 +130,20 @@ export class BinanceService {
 
       return data;
     } catch (e: any) {
-      if (e.message.includes('Failed to fetch') && !params._isRetry) {
-        console.warn('Network error detected, retrying once...');
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        return this.request(method, path, { ...params, _isRetry: true }, signed);
+      const isNetworkError = e.message.includes('Failed to fetch') || e.message.includes('NetworkError');
+      const retryCount = params._retryCount || 0;
+      const maxRetries = 3;
+
+      if (isNetworkError && retryCount < maxRetries) {
+        const delay = Math.pow(2, retryCount) * 1000;
+        console.warn(`Network error detected, retrying in ${delay}ms... (Attempt ${retryCount + 1}/${maxRetries})`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        return this.request(method, path, { ...params, _retryCount: retryCount + 1 }, signed);
       }
-      console.error('Binance Request Failed:', e);
+      
+      if (!isNetworkError) {
+        console.error('Binance Request Failed:', e);
+      }
       throw e;
     }
   }
@@ -204,9 +228,8 @@ export class BinanceService {
   }
 
   async getIp() {
-    // Fetch from our own backend to get server IP (always useful for whitelisting)
     try {
-      const res = await fetch('/api/system/ip');
+      const res = await fetch('/api/ip');
       const data = await res.json();
       return data.ip || 'Unknown';
     } catch (e) {

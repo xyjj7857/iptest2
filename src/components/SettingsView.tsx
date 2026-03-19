@@ -9,40 +9,17 @@ interface SettingsViewProps {
   settings: AppSettings;
   onSave: (settings: AppSettings) => void;
   ip: string;
-  onRefreshIp?: (newIp: string) => void;
 }
 
-export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSave, ip, onRefreshIp }) => {
+export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSave, ip }) => {
   const [localSettings, setLocalSettings] = useState(settings);
   const [showSecrets, setShowSecrets] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [displayIp, setDisplayIp] = useState(ip);
-  const [isRefreshingIp, setIsRefreshingIp] = useState(false);
-
-  const handleRefreshIp = async () => {
-    setIsRefreshingIp(true);
-    try {
-      const res = await fetch('/api/system/ip?refresh=true');
-      const data = await res.json();
-      const newIp = data.ip || '获取失败';
-      setDisplayIp(newIp);
-      if (onRefreshIp) onRefreshIp(newIp);
-    } catch (e) {
-      alert('刷新 IP 失败');
-    } finally {
-      setIsRefreshingIp(false);
-    }
-  };
 
   // Sync local state when prop changes (e.g. from auto-pull at startup)
   React.useEffect(() => {
     setLocalSettings(settings);
   }, [settings]);
-
-  // Sync displayIp when prop changes
-  React.useEffect(() => {
-    setDisplayIp(ip);
-  }, [ip]);
 
   const handleChange = (module: keyof AppSettings, field: string, value: any) => {
     setLocalSettings(prev => ({
@@ -257,22 +234,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSave, ip
             <div className="flex-1">
               <p className="text-xs text-amber-600 font-bold uppercase flex items-center gap-1">
                 <span className="w-2 h-2 bg-amber-500 rounded-full animate-pulse"></span>
-                服务器 IP (用于币安 API 白名单)
+                服务器代理 IP (用于币安 API 白名单)
               </p>
-              <div className="flex items-center gap-2 mt-1">
-                <p className="text-xl font-mono font-bold text-amber-800">{displayIp}</p>
-                <button 
-                  onClick={handleRefreshIp}
-                  disabled={isRefreshingIp}
-                  className="p-1 text-amber-600 hover:bg-amber-100 rounded-md transition-colors disabled:opacity-50"
-                  title="刷新 IP"
-                >
-                  <RotateCcw size={16} className={isRefreshingIp ? 'animate-spin' : ''} />
-                </button>
-              </div>
+              <p className="text-xl font-mono font-bold text-amber-800 mt-1">{ip}</p>
               <div className="mt-3 space-y-2">
                 <p className="text-xs text-amber-700 leading-relaxed">
-                  核心程序将通过 <span className="font-bold">服务器 IP</span> 执行，您 <span className="font-bold underline">必须</span> 在币安 API 设置中：
+                  系统已强制使用 <span className="font-bold">“代理 IP (服务器)”</span> 模式，您 <span className="font-bold underline">必须</span> 在币安 API 设置中：
                 </p>
                 <ul className="text-[11px] text-amber-600 list-disc list-inside space-y-1">
                   <li>勾选 <span className="font-bold">“启用合约”</span> 权限</li>
@@ -280,13 +247,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ settings, onSave, ip
                   <li>将上方 IP 地址复制并粘贴到币安的 IP 白名单列表中</li>
                 </ul>
                 <p className="text-[10px] text-amber-500 italic mt-2">
-                  提示：使用“代理 IP”模式可以避免因您的本地网络变动导致的 IP 验证失败，建议开启。
+                  提示：使用“代理 IP”模式可以避免因您的本地网络变动导致的 IP 验证失败，提高系统稳定性。
                 </p>
               </div>
             </div>
             <button 
               onClick={() => {
-                navigator.clipboard.writeText(displayIp);
+                navigator.clipboard.writeText(ip);
                 alert('IP 已复制到剪贴板');
               }}
               className="px-4 py-2 bg-amber-600 text-white rounded-lg text-sm font-bold hover:bg-amber-700 transition-all shadow-sm active:scale-95"

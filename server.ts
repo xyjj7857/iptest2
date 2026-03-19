@@ -3,46 +3,23 @@ import { createServer as createViteServer } from "vite";
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = 3030;
 
   app.use(express.json());
-
-  let lastOutboundIp = "正在获取...";
-
-  async function fetchOutboundIp() {
-    try {
-      const response = await fetch('https://api.ipify.org?format=json');
-      const data = await response.json() as { ip: string };
-      if (data && data.ip) {
-        lastOutboundIp = data.ip;
-        console.log(`[System] Outbound IP updated: ${lastOutboundIp}`);
-      }
-    } catch (e) {
-      console.error('[System] Failed to fetch outbound IP:', e);
-    }
-  }
-
-  // Initial fetch
-  fetchOutboundIp();
-
-  // Periodic update (every 1 hour)
-  setInterval(fetchOutboundIp, 3600000);
 
   // API routes FIRST
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
   });
 
-  app.get("/api/system/ip", async (req, res) => {
-    const refresh = req.query.refresh === 'true';
-    if (refresh) {
-      await fetchOutboundIp();
-    }
-    res.json({ ip: lastOutboundIp });
-  });
-
   app.get("/api/ip", async (req, res) => {
-    res.json({ ip: lastOutboundIp });
+    try {
+      const response = await fetch('https://api.ipify.org?format=json');
+      const data = await response.json();
+      res.json(data);
+    } catch (e) {
+      res.status(500).json({ error: 'Failed to fetch IP' });
+    }
   });
 
   app.post("/api/proxy", async (req, res) => {

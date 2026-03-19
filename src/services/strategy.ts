@@ -113,22 +113,29 @@ export class StrategyEngine {
     this.binance.getIp().then(ip => {
       this.ip = ip;
       this.notifyUI();
+    }).catch(err => {
+      console.error('Failed to get initial IP:', err);
     });
 
     this.startTimers();
 
     if (this.masterSwitch) {
-      // 1. Sync Time
-      await this.binance.syncTime();
-      if (this.isStopped) return;
-      
-      // 2. Refresh Exchange Info
-      await this.refreshExchangeInfo();
-      if (this.isStopped) return;
+      try {
+        // 1. Sync Time
+        await this.binance.syncTime();
+        if (this.isStopped) return;
+        
+        // 2. Refresh Exchange Info
+        await this.refreshExchangeInfo();
+        if (this.isStopped) return;
 
-      // 3. Setup User Data Stream
-      await this.setupUserDataStream();
-      if (this.isStopped) return;
+        // 3. Setup User Data Stream
+        await this.setupUserDataStream();
+        if (this.isStopped) return;
+      } catch (err) {
+        console.error('Initialization failed in start():', err);
+        StorageService.addLog({ module: 'Strategy', type: 'error', message: `初始化失败: ${err instanceof Error ? err.message : String(err)}` });
+      }
 
       // 4. Connect WebSocket
       this.ws.connect(
@@ -174,8 +181,8 @@ export class StrategyEngine {
       this.apiError = e.message;
       
       // Extract IP from error if present
-      if (e.message.includes('request ip:')) {
-        const match = e.message.match(/request ip: ([\d\.]+)/);
+      if (e.message.includes('IP') || e.message.includes('ip:')) {
+        const match = e.message.match(/(?:request ip:|当前请求 IP \()([\d\.]+)\)?/);
         if (match && match[1]) {
           this.ip = match[1];
         }
@@ -571,8 +578,8 @@ export class StrategyEngine {
       this.apiError = e.message;
       
       // Extract IP from error if present
-      if (e.message.includes('request ip:')) {
-        const match = e.message.match(/request ip: ([\d\.]+)/);
+      if (e.message.includes('IP') || e.message.includes('ip:')) {
+        const match = e.message.match(/(?:request ip:|当前请求 IP \()([\d\.]+)\)?/);
         if (match && match[1]) {
           this.ip = match[1];
         }
@@ -1026,19 +1033,50 @@ export class StrategyEngine {
       const total = this.stage1Results.length;
       let processed = 0;
 
-      for (const symbol of this.stage1Results) {
-        processed++;
-        this.isScanning.stage2Progress = (processed / total) * 100;
-        if (processed % 5 === 0) this.notifyUI();
+      // Use a batch size for REST fallbacks to avoid hitting rate limits too hard
+      const targets = [...this.stage1Results];
+      
+      for (let i = 0; i < targets.length; i += 10) {
+        const batch = targets.slice(i, i + 10);
+        await Promise.all(batch.map(async (symbol) => {
+          processed++;
+          this.isScanning.stage2Progress = (processed / total) * 100;
+          if (processed % 5 === 0) this.notifyUI();
 
-        const k5 = this.stage2Data.get(symbol.toLowerCase());
-        const k15 = this.stage2Data15m.get(symbol.toLowerCase());
-        const k15Closed = this.stage2Data15mClosed.get(symbol.toLowerCase());
-        
-        if (!k5 || !k15) {
-          failed.push({ symbol, reason: !k5 ? '无5mK线数据' : '无15mK线数据' });
-          continue;
-        }
+          const symLower = symbol.toLowerCase();
+          let k5 = this.stage2Data.get(symLower);
+          let k15 = this.stage2Data15m.get(symLower);
+          
+          // Fallback to REST API if WebSocket data is missing
+          if (!k5 || !k15) {
+            try {
+              if (!k5) {
+                const klines5m = await this.binance.getKLines(symbol, '5m', 1);
+                if (klines5m && klines5m.length > 0) {
+                  const k = klines5m[0];
+                  k5 = { t: k[0], o: k[1], h: k[2], l: k[3], c: k[4], v: k[5], q: k[7], i: '5m' };
+                  this.stage2Data.set(symLower, k5);
+                }
+              }
+              if (!k15) {
+                const klines15m = await this.binance.getKLines(symbol, '15m', 1);
+                if (klines15m && klines15m.length > 0) {
+                  const k = klines15m[0];
+                  k15 = { t: k[0], o: k[1], h: k[2], l: k[3], c: k[4], v: k[5], q: k[7], i: '15m' };
+                  this.stage2Data15m.set(symLower, k15);
+                }
+              }
+            } catch (err) {
+              console.error(`Failed to fetch fallback K-lines for ${symbol}:`, err);
+            }
+          }
+
+          const k15Closed = this.stage2Data15mClosed.get(symLower);
+          
+          if (!k5 || !k15) {
+            failed.push({ symbol, reason: !k5 ? '无5mK线数据' : '无15mK线数据' });
+            return;
+          }
 
         const serverTime = Date.now() + this.binance.getTimeOffset();
         const p5 = 5 * 60 * 1000;
@@ -1049,7 +1087,7 @@ export class StrategyEngine {
         // 校验 K线是否属于当前周期，确保 K2 计算准确
         if (k15.t !== current15mStart) {
           failed.push({ symbol, reason: `15mK线延迟 (${new Date(k15.t).toLocaleTimeString()} != ${new Date(current15mStart).toLocaleTimeString()})` });
-          continue;
+          return;
         }
 
         // 1. 过滤判断逻辑：使用扫描时刻的最新数据 (k15)
@@ -1102,7 +1140,7 @@ export class StrategyEngine {
         const lastTrade = this.cooldowns.get(symbol) || 0;
         if (Date.now() - lastTrade < this.settings.scanner.stage2Cooldown * 60000) {
           failed.push({ symbol, reason: '冷却中', k2: kAbsChange, a: aChange, volume, k5: k5Change, k15Change: k15ChangeRef, kb: kbChange });
-          continue;
+          return;
         }
 
         // 初始理论偏移使用参考值
@@ -1132,10 +1170,11 @@ export class StrategyEngine {
         } else {
           failed.push({ ...coinData, reason });
         }
-      }
+      }));
+    }
 
-      // Sort: volume high to low, then symbol for stability
-      candidates.sort((a, b) => {
+    // Sort: volume high to low, then symbol for stability
+    candidates.sort((a, b) => {
         if (b.volume !== a.volume) return b.volume - a.volume;
         return a.symbol.localeCompare(b.symbol);
       });
@@ -1404,8 +1443,10 @@ export class StrategyEngine {
   }
 
   async updateSettings(settings: AppSettings) {
+    const wasOn = this.masterSwitch;
     this.settings = settings;
     this.masterSwitch = settings.masterSwitch;
+    StorageService.saveSettings(this.settings);
     
     // Re-init binance if keys changed
     this.binance = new BinanceService(
@@ -1417,47 +1458,85 @@ export class StrategyEngine {
     // Update WebSocket URL if changed
     this.ws.setUrl(settings.binance.wsUrl);
 
+    // Update IP with new selection
+    this.binance.getIp().then(ip => {
+      this.ip = ip;
+      this.notifyUI();
+    }).catch(err => {
+      console.error('Failed to update IP:', err);
+    });
+
     // Re-sync time and refresh account info with new keys
     if (this.masterSwitch) {
-      await this.binance.syncTime();
-      await this.refreshAccountInfo();
+      try {
+        await this.binance.syncTime();
+        await this.refreshExchangeInfo();
+        await this.setupUserDataStream();
+        if (!wasOn) {
+          this.connectWebSocket();
+        }
+        this.refreshAccountInfo();
+      } catch (err) {
+        console.error('Failed to re-initialize after settings update:', err);
+      }
+    } else if (wasOn) {
+      this.ws.close();
+      this.stopUserDataStream();
     }
   }
 
-  setMasterSwitch(val: boolean) {
+  async setMasterSwitch(val: boolean) {
+    if (this.masterSwitch === val) return;
+    
     this.masterSwitch = val;
     this.settings.masterSwitch = val;
     StorageService.saveSettings(this.settings);
     
     if (val) {
       // ON: Re-initialize everything
-      this.binance.syncTime();
-      this.refreshExchangeInfo();
-      this.setupUserDataStream();
-      this.ws.connect(
-        () => {
-          this.wsError = null;
-          this.notifyUI();
-          this.updateSubscriptions();
-        },
-        () => this.notifyUI(),
-        (err) => {
-          this.wsError = 'WebSocket 连接失败，请检查地址或网络';
-          this.notifyUI();
-        }
-      );
-      this.refreshAccountInfo();
-      // 立即执行第一次全市场扫描
-      this.runStage0();
+      try {
+        await this.binance.syncTime();
+        await this.refreshExchangeInfo();
+        await this.setupUserDataStream();
+        this.connectWebSocket();
+        this.refreshAccountInfo();
+        // 立即执行第一次全市场扫描
+        this.runStage0();
+      } catch (err) {
+        console.error('Failed to initialize on switch ON:', err);
+        StorageService.addLog({ module: 'Strategy', type: 'error', message: `开启策略失败: ${err instanceof Error ? err.message : String(err)}` });
+      }
     } else {
       // OFF: Cleanup and stop all requests
-      this.updateSubscriptions(); // Will clear all market data subscriptions
       this.ws.close();
-      if (this.listenKeyTimer) clearInterval(this.listenKeyTimer);
-      this.listenKeyTimer = null;
-      this.listenKey = null;
+      this.stopUserDataStream();
+      this.stage1Results = [];
+      this.stage2Results = [];
+      this.stage2Failed = [];
       this.notifyUI();
     }
+  }
+
+  private connectWebSocket() {
+    this.ws.connect(
+      () => {
+        this.wsError = null;
+        this.notifyUI();
+        this.updateSubscriptions();
+      },
+      () => this.notifyUI(),
+      (err) => {
+        this.wsError = 'WebSocket 连接失败，请检查地址或网络';
+        this.notifyUI();
+      }
+    );
+  }
+
+  private stopUserDataStream() {
+    if (this.listenKeyTimer) clearInterval(this.listenKeyTimer);
+    this.listenKeyTimer = null;
+    this.listenKey = null;
+    this.ws.setListenKey(null);
   }
 
   public forceRunStage0() {

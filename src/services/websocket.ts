@@ -23,9 +23,9 @@ export class BinanceWS {
   setUrl(url: string) {
     if (this.url !== url) {
       this.url = url;
-      if (this.ws) {
-        this.isManualClose = false; // 允许自动重连到新 URL
-        this.ws.close();
+      if (this.ws || this.reconnectTimer) {
+        // Reconnect with the new URL
+        this.connect(this.onOpen, this.onClose, this.onError);
       }
     }
   }
@@ -33,10 +33,31 @@ export class BinanceWS {
   setListenKey(key: string | null) {
     if (this.listenKey !== key) {
       this.listenKey = key;
-      if (this.ws) {
-        this.isManualClose = false; // 允许自动重连到新 ListenKey
+      if (this.ws || this.reconnectTimer) {
+        // Reconnect with the new ListenKey
+        this.connect(this.onOpen, this.onClose, this.onError);
+      }
+    }
+  }
+
+  private safeClose() {
+    if (!this.ws) return;
+    
+    // Remove listeners to prevent callbacks during closing
+    this.ws.onopen = null;
+    this.ws.onmessage = null;
+    this.ws.onclose = null;
+    this.ws.onerror = null;
+
+    try {
+      // Only close if it's not already closed
+      if (this.ws.readyState !== WebSocket.CLOSED && this.ws.readyState !== WebSocket.CLOSING) {
         this.ws.close();
       }
+    } catch (e) {
+      // Ignore errors during close
+    } finally {
+      this.ws = null;
     }
   }
 
@@ -46,12 +67,13 @@ export class BinanceWS {
     this.onError = onError;
     this.isManualClose = false;
 
-    if (this.ws) {
-      this.ws.onopen = null;
-      this.ws.onmessage = null;
-      this.ws.onclose = null;
-      this.ws.onerror = null;
-      this.ws.close();
+    // If there's an existing socket, clean it up properly
+    this.safeClose();
+
+    // Clear any existing reconnect timer to avoid multiple connection attempts
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
 
     // Ensure URL doesn't end with a slash before appending listenKey
@@ -88,7 +110,9 @@ export class BinanceWS {
         const data = JSON.parse(event.data);
         // Binance specific: handle ping from server if any (though usually it's frames)
         if (data.e === 'ping') {
-          this.ws?.send(JSON.stringify({ method: 'pong' }));
+          if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+            this.ws.send(JSON.stringify({ method: 'pong' }));
+          }
           return;
         }
         this.onMessage(data);
@@ -107,9 +131,11 @@ export class BinanceWS {
     };
 
     this.ws.onerror = (err) => {
-      console.error('WebSocket Error:', err);
+      // Don't log as error if it's a normal closure or if we're reconnecting
+      if (this.ws?.readyState !== WebSocket.CLOSED) {
+        console.error('WebSocket Error:', err);
+      }
       if (this.onError) this.onError(err);
-      // On error, the onclose will be called, which triggers reconnect
     };
   }
 
@@ -192,11 +218,11 @@ export class BinanceWS {
   }
 
   close() {
-    if (this.ws) {
-      this.ws.close();
-    }
+    this.isManualClose = true;
+    this.safeClose();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
     }
   }
 

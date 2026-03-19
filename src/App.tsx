@@ -14,13 +14,13 @@ import { AppSettings, LogEntry } from './types';
 export default function App() {
   const [settings, setSettings] = useState<AppSettings>(() => {
     const s = StorageService.getSettings();
-    s.masterSwitch = false; // 启动时先关闭，同步后再开启
     return s;
   });
   const [activeTab, setActiveTab] = useState('dashboard');
   const [isLocked, setIsLocked] = useState(true);
   const [logs, setLogs] = useState<LogEntry[]>(StorageService.getLogs());
   const [ip, setIp] = useState('加载中...');
+  const [localIp, setLocalIp] = useState('加载中...');
   const [engineState, setEngineState] = useState<any>({
     stage0Results: [],
     stage0PResults: [],
@@ -106,19 +106,17 @@ export default function App() {
     engine.start();
 
     // Fetch IPs
-    const binance = new BinanceService(settings.binance.apiKey, settings.binance.secretKey, settings.binance.baseUrl);
+    const binance = new BinanceService(
+      settings.binance.apiKey, 
+      settings.binance.secretKey, 
+      settings.binance.baseUrl
+    );
+    binance.getIp().then(setIp);
     
-    const fetchIps = async () => {
-      try {
-        const res = await fetch('/api/system/ip');
-        const data = await res.json();
-        setIp(data.ip || '获取失败');
-      } catch (e) {
-        setIp('获取失败');
-      }
-    };
-
-    fetchIps();
+    fetch('https://api.ipify.org?format=json')
+      .then(res => res.json())
+      .then(data => setLocalIp(data.ip))
+      .catch(() => setLocalIp('获取失败'));
 
     return () => {
       if (engineRef.current) {
@@ -188,7 +186,7 @@ export default function App() {
       onToggleMaster={handleToggleMaster}
       onLock={() => setIsLocked(true)}
     >
-      {activeTab === 'dashboard' && <Dashboard state={engineState} ip={ip} />}
+      {activeTab === 'dashboard' && <Dashboard state={engineState} ip={ip} localIp={localIp} />}
       {activeTab === 'scanner' && (
         <ScannerView 
           state={engineState} 
@@ -199,7 +197,7 @@ export default function App() {
         />
       )}
       {activeTab === 'logs' && <LogView logs={logs} onClear={handleClearLogs} />}
-      {activeTab === 'settings' && <SettingsView settings={settings} onSave={handleSaveSettings} ip={ip} onRefreshIp={setIp} />}
+      {activeTab === 'settings' && <SettingsView settings={settings} onSave={handleSaveSettings} ip={ip} />}
     </Layout>
   );
 }
